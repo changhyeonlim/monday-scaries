@@ -42,6 +42,9 @@ class AnthropicProvider(LLMProvider):
             max_tokens=max_tokens,
             output_config={"effort": "low"},
         )
+        self._add_usage(
+            getattr(response, "usage", None), "input_tokens", "output_tokens"
+        )
         if response.stop_reason == "refusal":
             raise RefusalError("The model declined to answer.")
         if response.stop_reason == "max_tokens":
