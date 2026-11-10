@@ -411,6 +411,24 @@ def test_claude_joins_only_text_blocks_and_sends_no_temperature(
     assert fake.calls[0]["max_tokens"] == 50
 
 
+def test_tokens_are_counted_for_both_providers(monkeypatch):
+    """Input + output tokens add up across calls, for the footer."""
+    gpt = OpenAICompatProvider(FAKE_KEY, "m")
+    reply = openai_reply()
+    reply.usage = SimpleNamespace(prompt_tokens=100, completion_tokens=20)
+    monkeypatch.setattr(gpt._client.chat.completions, "create", FakeCall(reply))
+    gpt.complete("s", "u")
+    gpt.complete("s", "u")
+    assert gpt.tokens_used == 240
+
+    claude = AnthropicProvider(FAKE_KEY, "m")
+    reply = claude_reply("OK")
+    reply.usage = SimpleNamespace(input_tokens=50, output_tokens=7)
+    monkeypatch.setattr(claude._client.messages, "create", FakeCall(reply))
+    claude.complete("s", "u")
+    assert claude.tokens_used == 57
+
+
 # describe_error
 
 
