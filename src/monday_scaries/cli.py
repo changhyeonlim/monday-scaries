@@ -9,8 +9,11 @@ from datetime import datetime, timedelta, timezone
 
 from monday_scaries.classify import classify_all
 from monday_scaries.config import (
+    KEY_FILE,
     PROVIDERS,
     default_provider_name,
+    key_status,
+    load_key_file,
     make_provider,
 )
 from monday_scaries.filters import apply_filters
@@ -84,7 +87,8 @@ examples:
   monday-scaries https://github.com/pytorch/pytorch --days 1 --limit 10
   monday-scaries pandas-dev/pandas --new-only --provider openai
 
-setup (keys are read from environment variables only):
+setup (environment variables, or the same NAME=value lines saved once in
+~/.monday_scaries/.env; the environment wins; a project .env is never read):
   ANTHROPIC_API_KEY     key for --provider claude (the default)
   OPENAI_API_KEY        key for --provider openai
   GEMINI_API_KEY        key for --provider gemini (AI Studio key)
@@ -96,6 +100,7 @@ setup (keys are read from environment variables only):
 
   PowerShell:  $env:ANTHROPIC_API_KEY = (Get-Clipboard).Trim()
   bash/zsh:    export ANTHROPIC_API_KEY="..."
+  check:       monday-scaries --show-keys
 
 exit codes:
   0 ok   1 GitHub error   2 bad input   3 repo not found or private
@@ -111,7 +116,12 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=HELP_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("repo", help="owner/repo or a GitHub URL")
+    parser.add_argument("repo", nargs="?", help="owner/repo or a GitHub URL")
+    parser.add_argument(
+        "--show-keys",
+        action="store_true",
+        help="list which keys are set and where from (never the values)",
+    )
     parser.add_argument(
         "--days",
         type=_days,
@@ -185,9 +195,18 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         The process exit code. See the EXIT_* constants.
     """
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
     _setup_logging(args.verbose)
     color = color_enabled(args.no_color)
+    from_file = load_key_file(KEY_FILE)
+
+    if args.show_keys:
+        print(f"Keys (environment wins over {KEY_FILE}):")
+        print("\n".join(key_status(from_file)))
+        return EXIT_OK
+    if not args.repo:
+        parser.error("the following arguments are required: repo")
 
     try:
         owner, repo = parse_repo(args.repo)
