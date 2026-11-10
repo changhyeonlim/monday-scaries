@@ -5,6 +5,7 @@ import pytest
 from monday_scaries.config import make_provider
 from monday_scaries.llm.anthropic import AnthropicProvider
 from monday_scaries.llm.base import MissingKeyError
+from monday_scaries.llm.gemini import GeminiProvider
 
 KEY = "sk-test-SECRET-123"
 
@@ -15,6 +16,7 @@ def clean_env(monkeypatch):
     for name in (
         "ANTHROPIC_API_KEY",
         "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
         "MONDAY_SCARIES_MODEL",
         "MONDAY_SCARIES_PROVIDER",
         "MONDAY_SCARIES_CUSTOM_BASE_URL",
@@ -57,6 +59,18 @@ def test_model_precedence(monkeypatch):
     assert make_provider("claude").model == "from-env"
     assert make_provider("claude", "from-flag").model == "from-flag"
     assert isinstance(make_provider("claude"), AnthropicProvider)
+
+
+def test_gemini_uses_the_native_provider(monkeypatch):
+    """AQ. keys are rejected by the OpenAI-compatible endpoint."""
+    with pytest.raises(MissingKeyError, match="GEMINI_API_KEY"):
+        make_provider("gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", KEY)
+    provider = make_provider("gemini", "models/from-flag")
+    assert isinstance(provider, GeminiProvider)
+    assert provider.name == "gemini"
+    assert provider.model == "from-flag"
+    assert make_provider("gemini").model == "gemini-flash-latest"
 
 
 def test_custom_needs_a_url_but_no_key(monkeypatch):
