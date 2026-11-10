@@ -5,6 +5,7 @@ import sys
 
 from monday_scaries.llm.anthropic import AnthropicProvider
 from monday_scaries.llm.base import LLMError, LLMProvider, MissingKeyError
+from monday_scaries.llm.gemini import GeminiProvider
 from monday_scaries.llm.openai_compat import OpenAICompatProvider
 
 KEY_ENV = {
@@ -16,7 +17,6 @@ KEY_ENV = {
 # OpenAI-compatible endpoints. None means OpenAI itself.
 BASE_URLS = {
     "openai": None,
-    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
 }
 
 
@@ -27,6 +27,8 @@ def _make(provider: str, model: str) -> LLMProvider:
         raise MissingKeyError(f"{KEY_ENV[provider]} is not set.")
     if provider == "claude":
         return AnthropicProvider(key, model)
+    if provider == "gemini":
+        return GeminiProvider(key, model)
     return OpenAICompatProvider(
         key, model, base_url=BASE_URLS[provider], name=provider
     )
