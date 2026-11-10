@@ -5,10 +5,19 @@ project folder. Precedence: --provider/--model flags, then
 MONDAY_SCARIES_PROVIDER/MONDAY_SCARIES_MODEL, then the defaults below.
 """
 
+import logging
 import os
+import re
+import stat
 from dataclasses import dataclass
+from pathlib import Path
 
 from monday_scaries.llm.base import LLMProvider, MissingKeyError
+
+logger = logging.getLogger(__name__)
+
+# The only key file the tool reads. Never a .env in the project folder.
+KEY_FILE = Path.home() / ".monday_scaries" / ".env"
 
 # Provider SDKs are imported inside make_provider(): the anthropic and
 # openai packages are large and slow to import, so --help, bad input,
@@ -54,6 +63,108 @@ PROVIDERS = {
 }
 
 
+def allowed_variables() -> frozenset[str]:
+    """Variable names the key file may set (the names in .env.example).
+
+    Anything else in the file is ignored, so it cannot change PATH or
+    point an SDK at another server (e.g. ANTHROPIC_BASE_URL).
+    """
+    names = {spec.key_env for spec in PROVIDERS.values()}
+    names |= {
+        "GITHUB_TOKEN",
+        "MONDAY_SCARIES_PROVIDER",
+        "MONDAY_SCARIES_MODEL",
+        CUSTOM_URL_ENV,
+    }
+    return frozenset(names)
+
+
+def parse_key_file(text: str) -> dict[str, str]:
+    """Parses KEY=value lines. Never logs a value.
+
+    Blank lines, comments, empty values, unknown names, and malformed
+    lines are skipped. "export " prefixes and surrounding quotes are
+    allowed.
+
+    Args:
+        text: The file's contents.
+
+    Returns:
+        The allowed, non-empty values by name.
+    """
+    allowed = allowed_variables()
+    values: dict[str, str] = {}
+    for number, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = line.removeprefix("export ").strip()
+        name, sep, value = line.partition("=")
+        name, value = name.strip(), value.strip().strip("\"'")
+        if not sep or not name:
+            logger.warning(
+                "Key file line %d is not NAME=value; skipped.", number
+            )
+            continue
+        if name not in allowed:
+            if not re.fullmatch(r"[A-Z0-9_]{1,40}", name):
+                name = "that name"  # might be a pasted key: don't echo it
+            logger.warning(
+                "Key file line %d: %s is not used; skipped.", number, name
+            )
+            continue
+        if value:
+            values[name] = value
+    return values
+
+
+def load_key_file(path: Path = KEY_FILE) -> dict[str, str]:
+    """Fills in env variables from the key file in the home folder.
+
+    A variable that is already set in the environment always wins. A
+    missing file is fine: the environment alone is enough.
+
+    Args:
+        path: The key file. Defaults to ~/.monday_scaries/.env.
+
+    Returns:
+        The names (not values) that came from the file, mapped to "file".
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    except OSError as err:
+        logger.warning("Could not read %s (%s).", path, type(err).__name__)
+        return {}
+    if os.name != "nt" and path.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        logger.warning(
+            "%s can be read by other users; run: chmod 600 %s", path, path
+        )
+    loaded = {}
+    for name, value in parse_key_file(text).items():
+        if not os.environ.get(name, "").strip():
+            os.environ[name] = value
+            loaded[name] = "file"
+    return loaded
+
+
+def key_status(from_file: dict[str, str]) -> list[str]:
+    """One line per key: where it came from, or missing. Never values."""
+    lines = []
+    names = [(n, s.key_env) for n, s in PROVIDERS.items() if n != "custom"]
+    names += [("custom", CUSTOM_URL_ENV), ("github", "GITHUB_TOKEN")]
+    for label, variable in names:
+        if not os.environ.get(variable, "").strip():
+            where = "missing"
+        elif from_file.get(variable):
+            where = f"set (from {KEY_FILE})"
+        else:
+            where = "set (environment)"
+        lines.append(f"  {label:<11} {variable:<31} {where}")
+    return lines
+
+
 def providers_with_keys() -> list[str]:
     """Names of providers whose key (or custom URL) is set. No values."""
     names = [
@@ -88,8 +199,9 @@ def missing_key_message(name: str, variable: str) -> str:
         f"{variable} is not set, so the {name} provider cannot be used.",
         "  Copy your key, then set it in this terminal:",
         f"    {set_env_hint(variable)}",
-        "  Keys are read from environment variables only, never from a "
-        "file in the project folder.",
+        f"  Or save it once in {KEY_FILE} as {variable}=... "
+        "(same format as .env.example).",
+        "  A .env file in the project folder is never read.",
     ]
     if others:
         lines.append(
