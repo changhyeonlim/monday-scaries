@@ -5,6 +5,8 @@ import pytest
 from monday_scaries import cli
 from monday_scaries.github_client import RateLimitError, RepoNotFoundError
 
+REAL_READY_PROVIDER = cli._ready_provider
+
 
 class FakeClient:
     """Stands in for GitHubClient; raises or returns what it is given."""
@@ -51,8 +53,8 @@ def fake_github(monkeypatch):
 
 def test_missing_llm_key_exits_5_before_github(monkeypatch):
     """No key: stop before any GitHub request."""
-    monkeypatch.undo()  # use the real _ready_provider
-    monkeypatch.setattr(cli, "GitHubClient", FakeClient)
+    # Use the real provider check; keep every other guard in place.
+    monkeypatch.setattr(cli, "_ready_provider", REAL_READY_PROVIDER)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("MONDAY_SCARIES_PROVIDER", raising=False)
     assert cli.main(["o/r"]) == cli.EXIT_LLM
@@ -71,6 +73,7 @@ def test_issues_are_classified_and_printed(capsys):
     out = capsys.readouterr().out
     assert "Classified 1 of 1 open issues" in out
     assert "━━ HIGH (1) " in out  # grouped under its severity
+    assert "HIGH 1" in out and "," not in out.splitlines()[3]  # chips
     assert "#7" in out and "crash" in out and "It crashes." in out
     assert "Tokens: 42 · fake/fake-model" in out
     assert "\033[" not in out  # --no-color means no ANSI codes
