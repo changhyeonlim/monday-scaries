@@ -5,6 +5,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 
+from monday_scaries.filters import apply_filters
 from monday_scaries.github_client import (
     GitHubClient,
     GitHubError,
@@ -23,17 +24,28 @@ EXIT_NOT_FOUND = 3
 EXIT_RATE_LIMITED = 4
 
 MAX_DAYS = 365
+MAX_LIMIT = 200
 
 
-def _days(text: str) -> int:
-    """Argparse type for --days: a whole number from 1 to MAX_DAYS."""
+def _whole_number(text: str, high: int) -> int:
+    """Parses a whole number from 1 to high, for argparse."""
     try:
         value = int(text)
     except ValueError:
         raise argparse.ArgumentTypeError("must be a whole number") from None
-    if not 1 <= value <= MAX_DAYS:
-        raise argparse.ArgumentTypeError(f"must be 1 to {MAX_DAYS}")
+    if not 1 <= value <= high:
+        raise argparse.ArgumentTypeError(f"must be 1 to {high}")
     return value
+
+
+def _days(text: str) -> int:
+    """Argparse type for --days."""
+    return _whole_number(text, MAX_DAYS)
+
+
+def _limit(text: str) -> int:
+    """Argparse type for --limit."""
+    return _whole_number(text, MAX_LIMIT)
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -59,6 +71,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=_days,
         default=7,
         help="activity window in days (default: 7)",
+    )
+    parser.add_argument(
+        "--new-only",
+        action="store_true",
+        help="only issues created within the window",
+    )
+    parser.add_argument(
+        "--limit",
+        type=_limit,
+        default=50,
+        help=f"max issues sent to the LLM, 1-{MAX_LIMIT} (default: 50)",
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="show debug logs"
@@ -101,15 +124,23 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         client.close()
 
-    # Temporary output until filters and report.py exist.
-    prs = sum(item.is_pull_request for item in items)
-    print(
-        f"{owner}/{repo}: {len(items)} open items updated in the last "
-        f"{args.days} days ({len(items) - prs} issues, {prs} pull requests)"
+    result = apply_filters(
+        items, since, new_only=args.new_only, limit=args.limit
     )
-    for item in items:
-        kind = "PR   " if item.is_pull_request else "issue"
-        print(f"  {kind} #{item.number:<6} {item.title[:60]}")
+    if not result.kept:
+        print(f"No open issues in {owner}/{repo} matched the filters.")
+        return EXIT_OK
+
+    # Temporary output until report.py exists.
+    print(
+        f"{owner}/{repo}: {len(result.kept)} of {result.in_window} open "
+        f"issues updated in the last {args.days} days will be classified "
+        f"({result.pull_requests} PRs removed, {result.excluded} excluded, "
+        f"{result.capped} over --limit)"
+    )
+    for issue in result.kept:
+        labels = ", ".join(issue.labels) or "-"
+        print(f"  #{issue.number:<6} {issue.title[:50]:<50}  [{labels}]")
     return EXIT_OK
 
 
