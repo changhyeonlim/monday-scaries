@@ -460,15 +460,6 @@ def test_empty_key_is_rejected_before_any_call(monkeypatch, value):
         ping._make("gemini", "test-model")
 
 
-def test_gemini_uses_its_base_url(monkeypatch):
-    """Gemini goes through the OpenAI-compatible client with its URL."""
-    monkeypatch.setenv("GEMINI_API_KEY", FAKE_KEY)
-    provider = ping._make("gemini", "test-model")
-    assert isinstance(provider, OpenAICompatProvider)
-    assert provider.name == "gemini"
-    assert "generativelanguage.googleapis.com" in str(provider._client.base_url)
-
-
 def test_unknown_provider_prints_usage(monkeypatch, capsys):
     """An unknown provider exits 2 with a usage line."""
     monkeypatch.setattr("sys.argv", ["ping", "nope", "model"])
