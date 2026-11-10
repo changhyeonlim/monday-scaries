@@ -51,6 +51,11 @@ class OpenAICompatProvider(LLMProvider):
             max_tokens=max_tokens,
             temperature=0,
         )
+        self._add_usage(
+            getattr(response, "usage", None),
+            "prompt_tokens",
+            "completion_tokens",
+        )
         if not response.choices:
             raise EmptyResponseError("The provider returned no choices.")
         choice = response.choices[0]
