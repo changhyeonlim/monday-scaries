@@ -70,8 +70,9 @@ def test_issues_are_classified_and_printed(capsys):
     assert cli.main(["o/r", "--no-color"]) == cli.EXIT_OK
     out = capsys.readouterr().out
     assert "Classified 1 of 1 open issues" in out
-    assert "high" in out and "why: crash — It crashes." in out
-    assert "Tokens: 42 · Model: fake/fake-model" in out
+    assert "━━ HIGH (1) " in out  # grouped under its severity
+    assert "#7" in out and "crash" in out and "It crashes." in out
+    assert "Tokens: 42 · fake/fake-model" in out
     assert "\033[" not in out  # --no-color means no ANSI codes
 
 
