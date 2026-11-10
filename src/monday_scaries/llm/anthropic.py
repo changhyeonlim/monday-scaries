@@ -4,14 +4,20 @@ import anthropic
 
 from monday_scaries.llm.base import (
     TIMEOUT_SECONDS,
-    LLMError,
     LLMProvider,
-    describe_error,
+    RefusalError,
+    TruncatedResponseError,
 )
 
 
 class AnthropicProvider(LLMProvider):
-    """Messages API on Anthropic."""
+    """Messages API on Anthropic.
+
+    Current Claude models reject temperature, so none is sent. Low
+    effort keeps the model's thinking short for classification.
+    """
+
+    _sdk_error = anthropic.APIError
 
     def __init__(self, api_key: str, model: str) -> None:
         """Creates the provider.
@@ -27,18 +33,21 @@ class AnthropicProvider(LLMProvider):
             api_key=api_key, timeout=TIMEOUT_SECONDS, max_retries=0
         )
 
-    def complete(self, system: str, user: str, max_tokens: int = 300) -> str:
+    def _send(self, system: str, user: str, max_tokens: int) -> str:
         """See base class."""
-        try:
-            response = self._client.messages.create(
-                model=self.model,
-                system=system,
-                messages=[{"role": "user", "content": user}],
-                max_tokens=max_tokens,
-                output_config={"effort": "low"},
+        response = self._client.messages.create(
+            model=self.model,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+            max_tokens=max_tokens,
+            output_config={"effort": "low"},
+        )
+        if response.stop_reason == "refusal":
+            raise RefusalError("The model declined to answer.")
+        if response.stop_reason == "max_tokens":
+            raise TruncatedResponseError(
+                f"Reply was cut off at max_tokens={max_tokens}."
             )
-        except anthropic.APIError as err:
-            raise LLMError(describe_error(err, self._api_key)) from None
         return "".join(
             block.text for block in response.content if block.type == "text"
         )
