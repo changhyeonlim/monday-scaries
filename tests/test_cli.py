@@ -26,11 +26,50 @@ class FakeClient:
         """Nothing to close."""
 
 
+class FakeLLM:
+    """Stands in for an LLM provider: valid facts for every issue."""
+
+    name, model = "fake", "fake-model"
+
+    def complete(self, system, user, max_tokens=300):
+        """Returns a valid facts reply."""
+        return (
+            '{"kind": "bug", "area": "other", "impact": "crash", '
+            '"workaround": "no", "scope": "common", "regression": "no", '
+            '"summary": "It crashes."}'
+        )
+
+
 @pytest.fixture(autouse=True)
 def fake_github(monkeypatch):
-    """Replaces the real GitHub client for every test."""
+    """Replaces the real GitHub client and LLM for every test."""
     FakeClient.result, FakeClient.created = [], 0
     monkeypatch.setattr(cli, "GitHubClient", FakeClient)
+    monkeypatch.setattr(cli, "_ready_provider", lambda args: FakeLLM())
+
+
+def test_missing_llm_key_exits_5_before_github(monkeypatch):
+    """No key: stop before any GitHub request."""
+    monkeypatch.undo()  # use the real _ready_provider
+    monkeypatch.setattr(cli, "GitHubClient", FakeClient)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("MONDAY_SCARIES_PROVIDER", raising=False)
+    assert cli.main(["o/r"]) == cli.EXIT_LLM
+    assert FakeClient.created == 0
+
+
+def test_issues_are_classified_and_printed(capsys):
+    """Fetched issues go through the LLM and are printed."""
+    from datetime import datetime, timezone
+
+    from monday_scaries.github_client import Issue
+
+    now = datetime.now(timezone.utc)
+    FakeClient.result = [Issue(7, "Boom", "", [], now, now, "")]
+    assert cli.main(["o/r", "--no-color"]) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "#7" in out and "crash" in out and "It crashes." in out
+    assert "\033[" not in out  # --no-color means no ANSI codes
 
 
 def test_bad_repo_exits_2_before_any_api_call():
