@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from monday_scaries.llm.anthropic import AnthropicProvider
 from monday_scaries.llm.base import LLMProvider, MissingKeyError
+from monday_scaries.llm.gemini import GeminiProvider
 from monday_scaries.llm.openai_compat import OpenAICompatProvider
 
 DEFAULT_PROVIDER = "claude"
@@ -35,11 +36,8 @@ class ProviderSpec:
 PROVIDERS = {
     "claude": ProviderSpec("ANTHROPIC_API_KEY", "claude-haiku-5-5"),
     "openai": ProviderSpec("OPENAI_API_KEY", "gpt-4o-mini"),
-    "gemini": ProviderSpec(
-        "GEMINI_API_KEY",
-        "gemini-flash-latest",
-        "https://generativelanguage.googleapis.com/v1beta/openai/",
-    ),
+    # Native endpoint: the OpenAI-compatible one rejects AQ. keys.
+    "gemini": ProviderSpec("GEMINI_API_KEY", "gemini-flash-latest"),
     "groq": ProviderSpec(
         "GROQ_API_KEY",
         "llama-3.3-70b-versatile",
@@ -150,4 +148,6 @@ def make_provider(name: str, model: str | None = None) -> LLMProvider:
         raise MissingKeyError(missing_key_message(name, spec.key_env))
     if name == "claude":
         return AnthropicProvider(key, model)
+    if name == "gemini":
+        return GeminiProvider(key, model)
     return OpenAICompatProvider(key, model, spec.base_url, name)
