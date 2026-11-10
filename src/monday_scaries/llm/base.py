@@ -198,6 +198,14 @@ class LLMProvider(ABC):
     model: str
     _api_key: str
     _sdk_error: type[Exception]
+    tokens_used: int = 0  # input + output tokens across all calls
+
+    def _add_usage(self, usage: object, *fields: str) -> None:
+        """Adds token counts from a response's usage object, if any."""
+        if usage is None:
+            return
+        counts = (getattr(usage, name, 0) for name in fields)
+        self.tokens_used += sum(c for c in counts if isinstance(c, int))
 
     def complete(self, system: str, user: str, max_tokens: int = 300) -> str:
         """Returns the model's text reply.
