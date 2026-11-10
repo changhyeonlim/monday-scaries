@@ -8,10 +8,11 @@ MONDAY_SCARIES_PROVIDER/MONDAY_SCARIES_MODEL, then the defaults below.
 import os
 from dataclasses import dataclass
 
-from monday_scaries.llm.anthropic import AnthropicProvider
 from monday_scaries.llm.base import LLMProvider, MissingKeyError
-from monday_scaries.llm.gemini import GeminiProvider
-from monday_scaries.llm.openai_compat import OpenAICompatProvider
+
+# Provider SDKs are imported inside make_provider(): the anthropic and
+# openai packages are large and slow to import, so --help, bad input,
+# and a missing key answer instantly, and only the chosen SDK is loaded.
 
 DEFAULT_PROVIDER = "claude"
 CUSTOM_URL_ENV = "MONDAY_SCARIES_CUSTOM_BASE_URL"
@@ -142,12 +143,20 @@ def make_provider(name: str, model: str | None = None) -> LLMProvider:
                 f"    {set_env_hint(CUSTOM_URL_ENV)}\n"
                 "    (value: http://localhost:11434/v1)"
             )
+        from monday_scaries.llm.openai_compat import OpenAICompatProvider
+
         # Ollama needs no key, but the SDK requires a non-empty string.
         return OpenAICompatProvider(key or "none", model, base_url, name)
     if not key:
         raise MissingKeyError(missing_key_message(name, spec.key_env))
     if name == "claude":
+        from monday_scaries.llm.anthropic import AnthropicProvider
+
         return AnthropicProvider(key, model)
     if name == "gemini":
+        from monday_scaries.llm.gemini import GeminiProvider
+
         return GeminiProvider(key, model)
+    from monday_scaries.llm.openai_compat import OpenAICompatProvider
+
     return OpenAICompatProvider(key, model, spec.base_url, name)
