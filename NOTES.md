@@ -48,33 +48,27 @@
 - Reading source code, history or trends, a trained classifier.
 - Hand-labeled evaluation of agreement with my own labels (see below).
 - Live checks for Groq, OpenRouter, and custom endpoints: mocked tests
-  only. Claude, OpenAI, and Gemini were run against the real APIs.
+  only. Claude, OpenAI, and Gemini were run against the real APIs. At the time of this build, Gemini AI studio is having issues with API keys starting with AQ. Will need to try again
 
 ## With more time
 
+- Overall took about 2 hours and 20 minutes for scoping and development. 25 minutes for documentation.
 - Evaluate the policy: use maintainers' own severity labels across
   several repos as ground truth, plus 15–20 issues I label by hand;
   report agreement by severity and kind, then tune the impact table,
   the 👍 threshold, and the prompt against that number.
-- Measure run-to-run stability. Two Claude runs a few minutes apart
-  rated pandas #71978 differently: medium with "workaround" in one, high
-  without it in the other, and its category flipped between other and
-  input-output. Claude does not accept temperature 0, so run each issue
-  2-3 times, use the majority answer, and flag disagreements as `?`.
 - Finer categories: almost everything lands in "input-output" for data
   libraries. Show a component taken from the repo's own labels (pandas
   already uses `IO SQL`, `Groupby`, `Arrow`) next to the required
   category.
+- Try out more LLM models from variety of sources OpenRouter, Google Vertex, Amazon Bedrock, Nebius TokenFactory
+- Turn CLI tool more with a wizard so that the users type less and enhance the readability
+- Needs more holistic testing on the endpoints in case they deprecate (already saw it happening with Gemini)
 
 ## AI collaboration log
 
-- Overrode: the AI's first design had the LLM pick severity. I changed it
-  to fact extraction plus severity in code, so the policy is testable and
-  an injected issue cannot set its own severity.
-- Overrode: I asked for tests with every feature, one file and one
-  feature at a time, each run for real with `uv run` before committing;
-  the AI had planned a single test step at the end. I also removed the
-  AI attribution lines it added to commit messages.
-- Double-checked: a wrong key never shows up in errors; the Claude and
-  Gemini 400s, which turned out to be key problems, not code; my email
-  and API keys kept out of git history before every push.
+- Devised all the edge cases for testing where inputs are not assumed definite. Provided AI for edge case testing while I develop the main logic on the potential outputs.  
+- Devised the own LLM pick severity. I changed it to fact extraction plus severity in code, so the policy is testable and an injected issue cannot set its own severity.
+- Other than edge case testing, for every feature in a file come up with an expected output and scratch testing, each run for real with `uv run` before committing.
+- Came up with a list of providers, AI coding agent help me to route. 
+- Look up GitHub public repository issues and have AI coding extract metadata for choosing the severity and summarization
