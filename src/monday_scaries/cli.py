@@ -1,8 +1,10 @@
 """Command-line entry point for Monday Scaries."""
 
 import argparse
+import json
 import logging
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 
 from monday_scaries.classify import classify_all
@@ -22,12 +24,13 @@ from monday_scaries.github_client import (
 )
 from monday_scaries.llm.base import LLMError, LLMProvider
 from monday_scaries.report import (
-    BOLD,
-    YELLOW,
+    ReportData,
     color_enabled,
-    format_result,
-    paint,
+    format_progress,
+    render_json,
+    render_text,
 )
+from monday_scaries.severity import assess, sort_key
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +130,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"max issues sent to the LLM, 1-{MAX_LIMIT} (default: 50)",
     )
     parser.add_argument(
+        "--top",
+        type=_limit,
+        default=10,
+        help="rows in the report table (default: 10)",
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="print the report as JSON"
+    )
+    parser.add_argument(
         "--provider",
         choices=sorted(PROVIDERS),
         default=None,
@@ -210,31 +222,47 @@ def main(argv: list[str] | None = None) -> int:
         items, since, new_only=args.new_only, limit=args.limit
     )
     if not filtered.kept:
-        print(f"No open issues in {owner}/{repo} matched the filters.")
+        message = f"No open issues in {owner}/{repo} matched the filters."
+        if args.json:
+            print(json.dumps({"repo": f"{owner}/{repo}", "message": message}))
+        else:
+            print(message)
         return EXIT_OK
 
+    # Progress goes to stderr so stdout holds only the report.
+    total = len(filtered.kept)
     print(
-        paint(f"{owner}/{repo}", (BOLD,), color)
-        + f": classifying {len(filtered.kept)} of {filtered.in_window} open "
-        f"issues updated in the last {args.days} days with "
-        f"{provider.name}/{provider.model}\n"
+        f"Classifying {total} issues with {provider.name}/{provider.model}...",
+        file=sys.stderr,
     )
+    done = iter(range(1, total + 1))
     run = classify_all(
         provider,
         filtered.kept,
-        on_result=lambda result: print(format_result(result, color)),
+        on_result=lambda result: print(
+            format_progress(next(done), total, result), file=sys.stderr
+        ),
     )
-    if run.stopped:
-        print(
-            paint(
-                f"\nWARNING: stopped early, results are partial. {run.stopped}"
-                f" ({run.not_attempted} issues not classified)",
-                (BOLD, YELLOW),
-                color,
-            )
-        )
-        return EXIT_PARTIAL
-    return EXIT_OK
+
+    assessments = sorted((assess(r) for r in run.results), key=sort_key)
+    data = ReportData(
+        repo=f"{owner}/{repo}",
+        days=args.days,
+        new_only=args.new_only,
+        since=since,
+        now=datetime.now(timezone.utc),
+        in_window=filtered.in_window,
+        new=filtered.new,
+        assessments=assessments,
+        top=args.top,
+        provider=provider.name,
+        model=provider.model,
+        tokens=provider.tokens_used,
+        stopped=run.stopped,
+        not_attempted=run.not_attempted,
+    )
+    print(render_json(data) if args.json else render_text(data, color))
+    return EXIT_PARTIAL if run.stopped else EXIT_OK
 
 
 if __name__ == "__main__":
