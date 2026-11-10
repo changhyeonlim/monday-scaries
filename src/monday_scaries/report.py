@@ -43,6 +43,17 @@ GROUP_TITLE = {
     "feature": "FEATURE REQUESTS",
     "other": "QUESTIONS, DOCS, OTHER",
 }
+# Short names for the summary line.
+CHIP_LABEL = {
+    "critical": "CRITICAL",
+    "high": "HIGH",
+    "?": "?",
+    "medium": "MEDIUM",
+    "low": "LOW",
+    "unrated": "UNRATED",
+    "feature": "FEATURES",
+    "other": "OTHER",
+}
 # Severity levels always shown in the summary line, even when zero.
 ALWAYS_COUNTED = ("critical", "high", "?", "medium", "low")
 CATEGORIES = ("installation", "input-output", "other")
@@ -222,7 +233,7 @@ def render_text(data: ReportData, color: bool) -> str:
     groups, categories = _counts(data)
     chips = [
         paint(
-            f"{GROUP_TITLE[name].split()[0]} {groups[name]}",
+            f"{CHIP_LABEL[name]} {groups[name]}",
             SEVERITY_STYLE[name],
             color,
         )
