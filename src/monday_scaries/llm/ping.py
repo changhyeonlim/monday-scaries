@@ -4,7 +4,7 @@ import os
 import sys
 
 from monday_scaries.llm.anthropic import AnthropicProvider
-from monday_scaries.llm.base import LLMError, LLMProvider
+from monday_scaries.llm.base import LLMError, LLMProvider, MissingKeyError
 from monday_scaries.llm.openai_compat import OpenAICompatProvider
 
 KEY_ENV = {
@@ -24,7 +24,7 @@ def _make(provider: str, model: str) -> LLMProvider:
     """Builds a provider from its name and its key's env var."""
     key = os.environ.get(KEY_ENV[provider], "").strip()
     if not key:
-        raise LLMError(f"{KEY_ENV[provider]} is not set.")
+        raise MissingKeyError(f"{KEY_ENV[provider]} is not set.")
     if provider == "claude":
         return AnthropicProvider(key, model)
     return OpenAICompatProvider(
