@@ -135,30 +135,58 @@ monday-scaries pandas-dev/pandas --limit 5 --json > report.json
 | `--show-keys` | List which keys are set and where from. |
 | `-v` | Debug logs (never include keys). |
 
-### Example output (shortened)
+### Example output
+
+A real run on 2026-11-09 (`--no-color`, shortened where marked):
 
 ```text
-pandas-dev/pandas · issues created in the last 7 days (since 2026-11-02)
-Classified 8 of 104 open issues · 23 new since the baseline
+$ monday-scaries pandas-dev/pandas --new-only --limit 8 --no-color
+Classifying 7 issues with claude/claude-haiku-5-5...
+  [1/7] #71978 bug, wrong_results
+  ...
+  [7/7] #71887 bug, wrong_results
+pandas-dev/pandas · issues created in the last 7 days (since 2026-11-03)
+Classified 7 of 103 open issues · 7 new since the baseline
 
- CRITICAL 0   HIGH 3   ? 1   MEDIUM 2   LOW 0   FEATURES 1   OTHER 1
- installation 0 · input-output 5 · other 3
+ CRITICAL 0   HIGH 2   ? 0   MEDIUM 4   LOW 1
+ installation 0 · input-output 6 · other 1
 
-━━ HIGH (3) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- #12345   to_sql writes timedelta64 columns in the wrong unit              NEW
-         input-output · opened Nov 04 · 5 days
-         wrong results, regression
-         to_sql stores timedelta64 values in nanoseconds instead of the
-         column's unit.
+━━ HIGH (2) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ #71887   BUG: Series.str.get_dummies adds "NaN" / "" column for categorical / Arrow-backed str… NEW
+         input-output · opened Nov 03 · 6 days
+         wrong results
+         Series.str.get_dummies gives wrong columns for categorical and Arrow-backed string dtypes,
+         adding NaN or empty-string columns.
 
-━━ ? NEEDS REVIEW (1) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- ...
+ #71941   BUG: to_sql writes timedelta64 columns in their own unit instead of nanoseconds (1000… NEW
+         input-output · opened Nov 07 · 2 days
+         wrong results, regression, workaround
+         to_sql writes timedelta64 columns in their native unit, not nanoseconds, so values are
+         1000x too small with the default microsecond unit.
+
+━━ MEDIUM (4) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ #71953   BUG: Series.dt.total_seconds raises ArrowInvalid for duration[ns][pyarrow] longer tha… NEW
+         input-output · opened Nov 08 · 1 day
+         broken feature, regression, workaround, edge case
+         Series.dt.total_seconds raises ArrowInvalid for duration[ns][pyarrow] values longer than
+         about 104 days, though it worked in pandas 2.3.3.
+ ... (3 more medium)
+
+━━ LOW (1) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ #71916   BUG: excess precision when printing float32 values                                     NEW
+         input-output · opened Nov 05 · 4 days
+         cosmetic
+         Pandas displays float32 values with excess precision, e.g. 100.099998 instead of 100.1,
+         when printing Series.
 
 Unclassified: none
-Tokens: 9,412 · claude/claude-haiku-5-5
+Tokens: 16,032 · claude/claude-haiku-5-5
 ```
 
-Issue numbers above are placeholders; run the tool for live results.
+The progress lines go to stderr; the report goes to stdout. The line
+under each title shows why the issue got its level: in #71941, the
+regression (up) and the workaround (down) cancel out, so it stays at
+the "wrong results" level, high.
 
 **Severity**, worst first: critical, high, `?` (needs review), medium,
 low. Then unrated issues, feature requests, and questions/docs/other.
