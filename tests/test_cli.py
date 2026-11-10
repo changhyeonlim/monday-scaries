@@ -30,6 +30,7 @@ class FakeLLM:
     """Stands in for an LLM provider: valid facts for every issue."""
 
     name, model = "fake", "fake-model"
+    tokens_used = 42
 
     def complete(self, system, user, max_tokens=300):
         """Returns a valid facts reply."""
@@ -68,8 +69,26 @@ def test_issues_are_classified_and_printed(capsys):
     FakeClient.result = [Issue(7, "Boom", "", [], now, now, "")]
     assert cli.main(["o/r", "--no-color"]) == cli.EXIT_OK
     out = capsys.readouterr().out
-    assert "#7" in out and "crash" in out and "It crashes." in out
+    assert "Classified 1 of 1 open issues" in out
+    assert "high" in out and "why: crash — It crashes." in out
+    assert "Tokens: 42 · Model: fake/fake-model" in out
     assert "\033[" not in out  # --no-color means no ANSI codes
+
+
+def test_json_output_is_valid_and_has_the_same_data(capsys):
+    """--json prints one JSON document on stdout, nothing else."""
+    import json
+    from datetime import datetime, timezone
+
+    from monday_scaries.github_client import Issue
+
+    now = datetime.now(timezone.utc)
+    FakeClient.result = [Issue(7, "Boom", "", [], now, now, "")]
+    assert cli.main(["o/r", "--json"]) == cli.EXIT_OK
+    report = json.loads(capsys.readouterr().out)
+    assert report["top"][0]["number"] == 7
+    assert report["top"][0]["severity"] == "high"
+    assert report["tokens"] == 42 and report["model"] == "fake-model"
 
 
 def test_bad_repo_exits_2_before_any_api_call():
