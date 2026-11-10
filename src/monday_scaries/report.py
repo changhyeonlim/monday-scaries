@@ -1,8 +1,10 @@
-"""The triage report: colored text for people, JSON for scripts."""
+"""The triage report: colored cards for people, JSON for scripts."""
 
 import json
 import os
+import shutil
 import sys
+import textwrap
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
@@ -31,8 +33,21 @@ SEVERITY_STYLE = {
     "feature": (CYAN,),
     "other": (BLUE,),
 }
+GROUP_TITLE = {
+    "critical": "CRITICAL",
+    "high": "HIGH",
+    "?": "? NEEDS REVIEW",
+    "medium": "MEDIUM",
+    "low": "LOW",
+    "unrated": "UNRATED",
+    "feature": "FEATURE REQUESTS",
+    "other": "QUESTIONS, DOCS, OTHER",
+}
+# Severity levels always shown in the summary line, even when zero.
+ALWAYS_COUNTED = ("critical", "high", "?", "medium", "low")
 CATEGORIES = ("installation", "input-output", "other")
-TITLE_WIDTH = 44
+INDENT = " " * 9  # card lines start under the title
+MIN_WIDTH, MAX_WIDTH = 60, 100
 
 
 @dataclass
@@ -48,7 +63,7 @@ class ReportData:
         in_window: Open issues active in the window (before --limit).
         new: Of those, issues created in the window.
         assessments: One per classified or unrated issue, sorted.
-        top: How many rows the table shows.
+        top: How many issues the report shows.
         provider: Provider name.
         model: Model name.
         tokens: Tokens used across all LLM calls.
@@ -122,13 +137,6 @@ def format_progress(index: int, total: int, result: Classified) -> str:
     return f"  [{index}/{total}] #{result.issue.number} {status}"
 
 
-def _label(assessment: Assessment) -> str:
-    """The text in the severity column: a level or the kind."""
-    if assessment.severity is not None:
-        return assessment.severity
-    return assessment.kind
-
-
 def _days_open(assessment: Assessment, now: datetime) -> int:
     """Whole days since the issue was opened."""
     return (now - assessment.result.issue.created_at).days
@@ -146,8 +154,51 @@ def _counts(data: ReportData) -> tuple[Counter, Counter]:
     return groups, categories
 
 
+def _width() -> int:
+    """Report width: the terminal width, kept between 60 and 100."""
+    columns = shutil.get_terminal_size((MAX_WIDTH, 24)).columns
+    return max(MIN_WIDTH, min(MAX_WIDTH, columns))
+
+
+def _card(
+    assessment: Assessment, data: ReportData, width: int, color: bool
+) -> list[str]:
+    """One issue as a short card: title, facts, why, summary."""
+    issue, facts = assessment.result.issue, assessment.result.facts
+    style = SEVERITY_STYLE.get(assessment.group, ())
+    new = _is_new(assessment, data.since)
+
+    title_room = width - len(INDENT) - (5 if new else 0)
+    title = issue.title
+    if len(title) > title_room:
+        title = title[: title_room - 1] + "…"
+    number = paint(f" #{issue.number:<6}", (BOLD,), color)
+    first = f"{number}  {title:<{title_room}}"
+    if new:
+        first += " " + paint("NEW", (BOLD, GREEN), color)
+
+    days = _days_open(assessment, data.now)
+    meta = (
+        f"{assessment.category} · opened {issue.created_at:%b %d} · "
+        f"{days} day{'s' if days != 1 else ''}"
+    )
+    lines = [
+        first.rstrip(),
+        paint(INDENT + meta, (DIM,), color),
+        paint(INDENT + assessment.reason, style, color),
+    ]
+    if facts:
+        lines += textwrap.wrap(
+            facts.summary,
+            width=width,
+            initial_indent=INDENT,
+            subsequent_indent=INDENT,
+        )
+    return lines
+
+
 def render_text(data: ReportData, color: bool) -> str:
-    """Builds the human-readable report.
+    """Builds the human-readable report as grouped cards.
 
     Args:
         data: The run's results.
@@ -156,88 +207,66 @@ def render_text(data: ReportData, color: bool) -> str:
     Returns:
         The report text.
     """
-    lines: list[str] = []
-    classified = len(data.assessments)
+    width = _width()
     window = "created" if data.new_only else "active"
-    lines.append(paint(data.repo, (BOLD,), color))
-    lines.append(
-        f"Baseline: issues {window} in the last {data.days} days "
-        f"(since {data.since:%Y-%m-%d})"
-    )
-    lines.append(
-        f"Classified {classified} of {data.in_window} open issues; "
-        f"{data.new} new since the baseline"
-    )
+    lines = [
+        paint(data.repo, (BOLD,), color)
+        + f" · issues {window} in the last {data.days} days "
+        f"(since {data.since:%Y-%m-%d})",
+        f"Classified {len(data.assessments)} of {data.in_window} open "
+        f"issues · {data.new} new since the baseline",
+    ]
     if data.stopped:
         lines.append(_partial_warning(data, color))
 
     groups, categories = _counts(data)
-    severity_parts = [
-        paint(f"{name} {groups[name]}", SEVERITY_STYLE[name], color)
+    chips = [
+        paint(
+            f"{GROUP_TITLE[name].split()[0]} {groups[name]}",
+            SEVERITY_STYLE[name],
+            color,
+        )
         for name in GROUP_ORDER
-        if groups[name]
+        if name in ALWAYS_COUNTED or groups[name]
     ]
-    lines.append("")
-    lines.append("By severity: " + (" · ".join(severity_parts) or "none"))
-    lines.append(
-        "By category: "
+    lines += [
+        "",
+        " " + "   ".join(chips),
+        " "
         + " · ".join(f"{c} {categories[c]}" for c in CATEGORIES)
-        + (f" · unrated {categories['-']}" if categories["-"] else "")
-    )
+        + (f" · unrated {categories['-']}" if categories["-"] else ""),
+    ]
 
-    rows = data.assessments[: data.top]
-    lines.append("")
-    lines.append(paint(f"Top {len(rows)}", (BOLD,), color))
-    header = (
-        f"  {'#':<7} {'Title':<{TITLE_WIDTH}} {'Severity':<9} "
-        f"{'Category':<13} {'Opened':<10} {'Days':>5}  New"
-    )
-    lines.append(paint(header, (DIM,), color))
-    for assessment in rows:
-        issue = assessment.result.issue
-        title = issue.title
-        if len(title) > TITLE_WIDTH:
-            title = title[: TITLE_WIDTH - 1] + "…"
-        label = _label(assessment)
-        severity = paint(
-            f"{label:<9}", SEVERITY_STYLE.get(assessment.group, ()), color
-        )
-        new = (
-            paint("NEW", (BOLD,), color)
-            if _is_new(assessment, data.since)
-            else ""
-        )
-        lines.append(
-            f"  {issue.number:<7} {title:<{TITLE_WIDTH}} {severity} "
-            f"{assessment.category:<13} {issue.created_at:%Y-%m-%d} "
-            f"{_days_open(assessment, data.now):>5}  {new}".rstrip()
-        )
-        summary = (
-            assessment.result.facts.summary if assessment.result.facts else ""
-        )
-        why = f"why: {assessment.reason}"
-        lines.append(
-            paint(
-                f"          {why}" + (f" — {summary}" if summary else ""),
-                (DIM,),
-                color,
-            )
-        )
+    shown = data.assessments[: data.top]
+    for name in GROUP_ORDER:
+        members = [a for a in shown if a.group == name]
+        if not members:
+            continue
+        heading = f"━━ {GROUP_TITLE[name]} ({len(members)}) "
+        lines += [
+            "",
+            paint(heading.ljust(width, "━"), SEVERITY_STYLE[name], color),
+        ]
+        for index, assessment in enumerate(members):
+            if index:
+                lines.append("")
+            lines += _card(assessment, data, width, color)
+
+    if len(data.assessments) > len(shown):
+        hidden = len(data.assessments) - len(shown)
+        lines += ["", paint(f" … {hidden} more (use --top)", (DIM,), color)]
 
     unrated = [a for a in data.assessments if a.result.facts is None]
-    lines.append("")
-    if unrated:
-        listed = ", ".join(
+    footer = "Unclassified: " + (
+        ", ".join(
             f"#{a.result.issue.number} ({a.result.error})" for a in unrated
         )
-        lines.append(f"Unclassified: {listed}")
-    else:
-        lines.append("Unclassified: none")
+        or "none"
+    )
+    lines += ["", footer]
     if data.not_attempted:
         lines.append(f"Not attempted: {data.not_attempted} (run stopped)")
-    lines.append(
-        f"Tokens: {data.tokens:,} · Model: {data.provider}/{data.model}"
-    )
+    lines.append(f"Tokens: {data.tokens:,} · {data.provider}/{data.model}")
     if data.stopped:
         lines.append(_partial_warning(data, color))
     return "\n".join(lines)
