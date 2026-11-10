@@ -26,6 +26,7 @@ class FilterResult:
         excluded: Issues dropped by excluded labels or --new-only.
         capped: Issues dropped by the --limit cap.
         pull_requests: Pull requests that were removed.
+        new: Issues in the window that were also created in it.
     """
 
     kept: list[Issue]
@@ -33,6 +34,7 @@ class FilterResult:
     excluded: int
     capped: int
     pull_requests: int
+    new: int = 0
 
 
 def normalize_label(name: str) -> str:
@@ -104,4 +106,5 @@ def apply_filters(
         excluded=len(in_window) - len(kept),
         capped=max(0, len(kept) - limit),
         pull_requests=pull_requests,
+        new=sum(i.created_at >= since for i in in_window),
     )
