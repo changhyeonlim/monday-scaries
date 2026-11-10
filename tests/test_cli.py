@@ -52,9 +52,17 @@ def test_rate_limit_exits_4():
 
 
 def test_no_issues_exits_0(capsys):
-    """An empty window is a normal result."""
+    """An empty window is a normal result with a clear message."""
     assert cli.main(["o/r"]) == cli.EXIT_OK
-    assert "0 open items" in capsys.readouterr().out
+    assert "No open issues" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("limit", ["0", "abc", "201"])
+def test_bad_limit_exits_2(limit):
+    """--limit must be a whole number from 1 to 200."""
+    with pytest.raises(SystemExit) as info:
+        cli.main(["o/r", "--limit", limit])
+    assert info.value.code == 2
 
 
 @pytest.mark.parametrize("days", ["0", "abc", "9999"])
